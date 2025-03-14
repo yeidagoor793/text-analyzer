@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Analyzer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        #editor {
+            min-height: 200px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        #analysis {
+            margin-top: 10px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+        }
+        .error {
+            cursor: pointer;
+            background-color: rgba(231, 76, 60, 0.1);
+            border-bottom: 2px dotted #e74c3c;
+            padding: 0 2px;
+        }
+        .warning {
+            cursor: pointer;
+            background-color: rgba(241, 196, 15, 0.1);
+            border-bottom: 2px dotted #f39c12;
+            padding: 0 2px;
+        }
+        .suggestion {
+            cursor: pointer;
+            background-color: rgba(52, 152, 219, 0.1);
+            border-bottom: 2px dotted #3498db;
+            padding: 0 2px;
+        }
+        .issue-list {
+            margin-top: 10px;
+        }
+        .issue-item {
+            margin-bottom: 8px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .issue-error {
+            background-color: rgba(231, 76, 60, 0.1);
+            border-left: 3px solid #e74c3c;
+        }
+        .issue-warning {
+            background-color: rgba(241, 196, 15, 0.1);
+            border-left: 3px solid #f39c12;
+        }
+        .issue-suggestion {
+            background-color: rgba(52, 152, 219, 0.1);
+            border-left: 3px solid #3498db;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #eee;
+            border-radius: 5px;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <h1>Text Analyzer</h1>
+    <div class="container">
+        <div>
+            <div contenteditable="true" id="editor" placeholder="Start typing here...">
+                Type or paste your text here to analyze it. The app will check for grammar, spelling, punctuation, and other writing issues as you type.
+            </div>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="word-count">0</div>
+                    <div class="stat-label">WORDS</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="char-count">0</div>
+                    <div class="stat-label">CHARACTERS</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="sentence-count">0</div>
+                    <div class="stat-label">SENTENCES</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="paragraph-count">0</div>
+                    <div class="stat-label">PARAGRAPHS</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="readability">0</div>
+                    <div class="stat-label">READABILITY</div>
+                </div>
+            </div>
+        </div>
+        <div id="analysis">
+            <h3>Analysis Results</h3>
+            <div class="issue-list" id="issues-container">
+                <p>No issues found yet. Start typing to see analysis results.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Dictionary for spelling check
+        const dictionary = new Set([
+            // Common words - this is a small sample, you would want a more comprehensive dictionary
+            "the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "he", 
+            "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", 
+            "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if", "about", "who", 
+            "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him", "know", "take", 
+            "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", "than", "then", "now", 
+            "look", "only", "come", "its", "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", 
+            "first", "well", "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
+            "type", "paste", "text", "here", "analyze", "app", "check", "grammar", "spelling", "punctuation", "writing", 
+            "issues", "analysis", "results"
+        ]);
+
+        // Grammar rules (simplified)
+        const grammarRules = [
+            { 
+                pattern: /\b(its|it's)\b/g, 
+                check: (match, text) => {
+                    const pos = text.indexOf(match);
+                    const nextWord = text.slice(pos + match.length).trim().split(/\s+/)[0];
+                    const isContraction = nextWord && ["a", "the", "my", "your", "their", "our"].includes(nextWord.toLowerCase());
+                    
+                    if (match === "its" && isContraction) {
+                        return { type: "error", message: "Use 'it's' (contraction of 'it is' or 'it has') instead of 'its'." };
+                    } else if (match === "it's" && !isContraction) {
+                        return { type: "error", message: "Use 'its' (possessive) instead of 'it's' (contraction)." };
+                    }
+                    return null;
+                }
+            },
+            { 
+                pattern: /\b(your|you're)\b/g, 
+                check: (match, text) => {
+                    const pos = text.indexOf(match);
+                    const nextWord = text.slice(pos + match.length).trim().split(/\s+/)[0];
+                    const isContraction = nextWord && ["a", "the", "my", "going", "trying"].includes(nextWord.toLowerCase());
+                    
+                    if (match === "your" && isContraction) {
+                        return { type: "error", message: "Use 'you're' (contraction of 'you are') instead of 'your'." };
+                    } else if (match === "you're" && !isContraction) {
+                        return { type: "error", message: "Use 'your' (possessive) instead of 'you're' (contraction)." };
+                    }
+                    return null;
+                }
+            },
+            { 
+                pattern: /\b(their|they're|there)\b/g, 
+                check: (match, text) => {
+                    const pos = text.indexOf(match);
+                    const prevWord = text.slice(0, pos).trim().split(/\s+/).pop();
+                    const nextWord = text.slice(pos + match.length).trim().split(/\s+/)[0];
+                    
+                    if (match === "their" && nextWord && ["is", "are", "was", "were"].includes(nextWord.toLowerCase())) {
+                        return { type: "error", message: "Use 'they're' (contraction of 'they are') instead of 'their'." };
+                    } else if (match === "they're" && !nextWord) {
+                        return { type: "error", message: "Use 'their' (possessive) or 'there' (location) instead of 'they're'." };
+                    } else if (match === "there" && prevWord && ["his", "her", "my", "your", "our"].includes(prevWord.toLowerCase())) {
+                        return { type: "error", message: "Use 'their' (possessive) instead of 'there'." };
+                    }
+                    return null;
+                }
+            },
+            { 
+                pattern: /\s+,/g, 
+                check: () => ({ type: "error", message: "No space before comma." })
+            },
+            { 
+                pattern: /\s+\./g, 
+                check: () => ({ type: "error", message: "No space before period." })
+            },
+            { 
+                pattern: /\s+;/g, 
+                check: () => ({ type: "error", message: "No space before semicolon." })
+            },
+            { 
+                pattern: /\s+:/g, 
+                check: () => ({ type: "error", message: "No space before colon." })
+            },
+            { 
+                pattern: /\s+\?/g, 
+                check: () => ({ type: "error", message: "No space before question mark." })
+            },
+            { 
+                pattern: /\s+!/g, 
+                check: () => ({ type: "error", message: "No space before exclamation mark." })
+            },
+            { 
+                pattern: /\.\s*[a-z]/g, 
+                check: () => ({ type: "error", message: "Sentence should start with a capital letter." })
+            },
+            { 
+                pattern: /\b[A-Z][a-z]*\s+[a-z]+\b/g, 
+                check: (match) => {
+                    const words = match.split(/\s+/);
+                    if (words.length === 2 && words[0].match(/^[A-Z][a-z]*$/) && words[1].match(/^[a-z]+$/)) {
+                        return { type: "warning", message: `'${words[1]}' might need to be capitalized if it's part of a proper noun.` };
+                    }
+                    return null;
+                }
+            },
+            { 
+                pattern: /\b(a)\s+[aeiou]/gi, 
+                check: (match) => ({ type: "error", message: `Use 'an' instead of 'a' before words starting with vowel sounds.` })
+            },
+            { 
+                pattern: /\b(an)\s+[bcdfghjklmnpqrstvwxyz]/gi, 
+                check: (match) => ({ type: "error", message: `Use 'a' instead of 'an' before words starting with consonant sounds.` })
+            },
+            { 
+                pattern: /\b(is|are|was|were|has|have)\s+(is|are|was|were|has|have)\b/gi, 
+                check: (match) => ({ type: "error", message: `Double auxiliary verb: '${match}'` })
+            },
+            { 
+                pattern: /\b(very|really|extremely|quite|actually)\s+(very|really|extremely|quite|actually)\b/gi, 
+                check: (match) => ({ type: "warning", message: `Double intensifier: '${match}'` })
+            },
+            {
+                pattern: /\b(affect|effect|than|then|accept|except|advice|advise|allude|elude|illusion|allusion|complement|compliment)\b/gi,
+                check: (match) => ({ type: "warning", message: `Commonly confused word: '${match}'. Make sure you're using the right one.` })
+            },
+            { 
+                pattern: /\b([a-z]+)\s+\1\b/gi, 
+                check: (match) => ({ type: "error", message: `Word repetition: '${match}'` })
+            },
+            { 
+                pattern: /\b(i|me|myself|my)\b/gi, 
+                check: (match) => {
+                    if (match.toLowerCase() === "i" && match !== "I") {
+                        return { type: "error", message: "The pronoun 'I' should be capitalized." };
+                    }
+                    return null;
+                }
+            },
+            { 
+                pattern: /\b(gonna|wanna|gotta|sorta|kinda|shoulda|coulda|woulda|dunno|ain't|innit|cuz)\b/gi, 
+                check: (match) => ({ type: "warning", message: `Informal contraction: '${match}'. Consider using a more formal alternative in formal writing.` })
+            },
+            { 
+                pattern: /\b(however|nevertheless|therefore|consequently|furthermore|moreover)\b/gi, 
+                check: (match, text) => {
+                    const pos = text.indexOf(match);
+                    const prevChar = text.charAt(pos - 1);
+                    const nextChar = text.charAt(pos + match.length);
+                    
+                    if (prevChar !== '.' && prevChar !== ';' && prevChar !== ',' && prevChar !== ':' && prevChar !== ' ') {
+                        return { type: "warning", message: `Transition word '${match}' should be preceded by proper punctuation.` };
+                    }
+                    if (nextChar !== ',' && nextChar !== '.') {
+                        return { type: "warning", message: `Transition word '${match}' should be followed by a comma or period.` };
+                    }
+                    return null;
+                }
+            },
+            { 
+                pattern: /\b(passive|pass
