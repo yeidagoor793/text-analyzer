@@ -95,6 +95,10 @@
             font-size: 12px;
             color: #7f8c8d;
         }
+        [contenteditable=true]:empty:before {
+            content: attr(placeholder);
+            color: #999;
+        }
     </style>
 </head>
 <body>
@@ -136,9 +140,8 @@
     </div>
 
     <script>
-        // Dictionary for spelling check
+        // Dictionary for spelling check (small sample, you would want a more comprehensive dictionary)
         const dictionary = new Set([
-            // Common words - this is a small sample, you would want a more comprehensive dictionary
             "the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "he", 
             "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", 
             "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if", "about", "who", 
@@ -150,18 +153,27 @@
             "issues", "analysis", "results"
         ]);
 
-        // Grammar rules (simplified)
+        // DOM elements
+        const editor = document.getElementById('editor');
+        const issuesContainer = document.getElementById('issues-container');
+        const wordCount = document.getElementById('word-count');
+        const charCount = document.getElementById('char-count');
+        const sentenceCount = document.getElementById('sentence-count');
+        const paragraphCount = document.getElementById('paragraph-count');
+        const readabilityScore = document.getElementById('readability');
+
+        // Grammar rules
         const grammarRules = [
             { 
                 pattern: /\b(its|it's)\b/g, 
                 check: (match, text) => {
                     const pos = text.indexOf(match);
-                    const nextWord = text.slice(pos + match.length).trim().split(/\s+/)[0];
-                    const isContraction = nextWord && ["a", "the", "my", "your", "their", "our"].includes(nextWord.toLowerCase());
+                    const nextWordMatch = text.slice(pos + match.length).match(/^\s+([a-z]+)/i);
+                    const nextWord = nextWordMatch ? nextWordMatch[1] : "";
                     
-                    if (match === "its" && isContraction) {
+                    if (match === "its" && nextWord && ["is", "has", "was", "been", "going"].includes(nextWord.toLowerCase())) {
                         return { type: "error", message: "Use 'it's' (contraction of 'it is' or 'it has') instead of 'its'." };
-                    } else if (match === "it's" && !isContraction) {
+                    } else if (match === "it's" && !["is", "has", "was", "been", "going"].includes(nextWord.toLowerCase())) {
                         return { type: "error", message: "Use 'its' (possessive) instead of 'it's' (contraction)." };
                     }
                     return null;
@@ -171,12 +183,12 @@
                 pattern: /\b(your|you're)\b/g, 
                 check: (match, text) => {
                     const pos = text.indexOf(match);
-                    const nextWord = text.slice(pos + match.length).trim().split(/\s+/)[0];
-                    const isContraction = nextWord && ["a", "the", "my", "going", "trying"].includes(nextWord.toLowerCase());
+                    const nextWordMatch = text.slice(pos + match.length).match(/^\s+([a-z]+)/i);
+                    const nextWord = nextWordMatch ? nextWordMatch[1] : "";
                     
-                    if (match === "your" && isContraction) {
+                    if (match === "your" && nextWord && ["are", "going", "trying", "looking"].includes(nextWord.toLowerCase())) {
                         return { type: "error", message: "Use 'you're' (contraction of 'you are') instead of 'your'." };
-                    } else if (match === "you're" && !isContraction) {
+                    } else if (match === "you're" && !["are", "going", "trying", "looking"].includes(nextWord.toLowerCase())) {
                         return { type: "error", message: "Use 'your' (possessive) instead of 'you're' (contraction)." };
                     }
                     return null;
@@ -186,13 +198,15 @@
                 pattern: /\b(their|they're|there)\b/g, 
                 check: (match, text) => {
                     const pos = text.indexOf(match);
-                    const prevWord = text.slice(0, pos).trim().split(/\s+/).pop();
-                    const nextWord = text.slice(pos + match.length).trim().split(/\s+/)[0];
+                    const prevWordMatch = text.slice(0, pos).match(/([a-z]+)\s+$/i);
+                    const prevWord = prevWordMatch ? prevWordMatch[1] : "";
+                    const nextWordMatch = text.slice(pos + match.length).match(/^\s+([a-z]+)/i);
+                    const nextWord = nextWordMatch ? nextWordMatch[1] : "";
                     
                     if (match === "their" && nextWord && ["is", "are", "was", "were"].includes(nextWord.toLowerCase())) {
                         return { type: "error", message: "Use 'they're' (contraction of 'they are') instead of 'their'." };
-                    } else if (match === "they're" && !nextWord) {
-                        return { type: "error", message: "Use 'their' (possessive) or 'there' (location) instead of 'they're'." };
+                    } else if (match === "they're" && !["going", "trying", "looking"].includes(nextWord.toLowerCase())) {
+                        return { type: "warning", message: "Check usage of 'they're'. It's a contraction of 'they are'." };
                     } else if (match === "there" && prevWord && ["his", "her", "my", "your", "our"].includes(prevWord.toLowerCase())) {
                         return { type: "error", message: "Use 'their' (possessive) instead of 'there'." };
                     }
@@ -200,50 +214,20 @@
                 }
             },
             { 
-                pattern: /\s+,/g, 
-                check: () => ({ type: "error", message: "No space before comma." })
-            },
-            { 
-                pattern: /\s+\./g, 
-                check: () => ({ type: "error", message: "No space before period." })
-            },
-            { 
-                pattern: /\s+;/g, 
-                check: () => ({ type: "error", message: "No space before semicolon." })
-            },
-            { 
-                pattern: /\s+:/g, 
-                check: () => ({ type: "error", message: "No space before colon." })
-            },
-            { 
-                pattern: /\s+\?/g, 
-                check: () => ({ type: "error", message: "No space before question mark." })
-            },
-            { 
-                pattern: /\s+!/g, 
-                check: () => ({ type: "error", message: "No space before exclamation mark." })
+                pattern: /\s+[,.;:!?]/g, 
+                check: (match) => ({ type: "error", message: `No space before punctuation: '${match}'` })
             },
             { 
                 pattern: /\.\s*[a-z]/g, 
-                check: () => ({ type: "error", message: "Sentence should start with a capital letter." })
+                check: (match) => ({ type: "error", message: "Sentence should start with a capital letter." })
             },
             { 
-                pattern: /\b[A-Z][a-z]*\s+[a-z]+\b/g, 
-                check: (match) => {
-                    const words = match.split(/\s+/);
-                    if (words.length === 2 && words[0].match(/^[A-Z][a-z]*$/) && words[1].match(/^[a-z]+$/)) {
-                        return { type: "warning", message: `'${words[1]}' might need to be capitalized if it's part of a proper noun.` };
-                    }
-                    return null;
-                }
+                pattern: /\ba\s+[aeiou]/gi, 
+                check: (match) => ({ type: "error", message: `Use 'an' instead of 'a' before words starting with vowel sounds: '${match}'` })
             },
             { 
-                pattern: /\b(a)\s+[aeiou]/gi, 
-                check: (match) => ({ type: "error", message: `Use 'an' instead of 'a' before words starting with vowel sounds.` })
-            },
-            { 
-                pattern: /\b(an)\s+[bcdfghjklmnpqrstvwxyz]/gi, 
-                check: (match) => ({ type: "error", message: `Use 'a' instead of 'an' before words starting with consonant sounds.` })
+                pattern: /\ban\s+[bcdfghjklmnpqrstvwxyz]/gi, 
+                check: (match) => ({ type: "error", message: `Use 'a' instead of 'an' before words starting with consonant sounds: '${match}'` })
             },
             { 
                 pattern: /\b(is|are|was|were|has|have)\s+(is|are|was|were|has|have)\b/gi, 
@@ -262,33 +246,75 @@
                 check: (match) => ({ type: "error", message: `Word repetition: '${match}'` })
             },
             { 
-                pattern: /\b(i|me|myself|my)\b/gi, 
-                check: (match) => {
-                    if (match.toLowerCase() === "i" && match !== "I") {
-                        return { type: "error", message: "The pronoun 'I' should be capitalized." };
-                    }
-                    return null;
-                }
+                pattern: /\bi\b/g, 
+                check: (match) => ({ type: "error", message: "The pronoun 'I' should be capitalized." })
             },
             { 
                 pattern: /\b(gonna|wanna|gotta|sorta|kinda|shoulda|coulda|woulda|dunno|ain't|innit|cuz)\b/gi, 
                 check: (match) => ({ type: "warning", message: `Informal contraction: '${match}'. Consider using a more formal alternative in formal writing.` })
-            },
-            { 
-                pattern: /\b(however|nevertheless|therefore|consequently|furthermore|moreover)\b/gi, 
-                check: (match, text) => {
-                    const pos = text.indexOf(match);
-                    const prevChar = text.charAt(pos - 1);
-                    const nextChar = text.charAt(pos + match.length);
-                    
-                    if (prevChar !== '.' && prevChar !== ';' && prevChar !== ',' && prevChar !== ':' && prevChar !== ' ') {
-                        return { type: "warning", message: `Transition word '${match}' should be preceded by proper punctuation.` };
+            }
+        ];
+
+        // Function to analyze text
+        function analyzeText() {
+            const text = editor.innerText;
+            const issues = [];
+            
+            // Reset analysis
+            issuesContainer.innerHTML = '';
+            
+            // Skip analysis if text is too short
+            if (text.length < 5) {
+                issuesContainer.innerHTML = '<p>No issues found yet. Start typing to see analysis results.</p>';
+                updateStats(text);
+                return;
+            }
+            
+            // Grammar check
+            grammarRules.forEach(rule => {
+                let match;
+                while ((match = rule.pattern.exec(text)) !== null) {
+                    const issue = rule.check(match[0], text);
+                    if (issue) {
+                        issues.push({
+                            match: match[0],
+                            index: match.index,
+                            ...issue
+                        });
                     }
-                    if (nextChar !== ',' && nextChar !== '.') {
-                        return { type: "warning", message: `Transition word '${match}' should be followed by a comma or period.` };
-                    }
-                    return null;
                 }
-            },
-            { 
-                pattern: /\b(passive|pass
+            });
+            
+            // Spelling check
+            const words = text.match(/\b[a-z']+\b/gi) || [];
+            words.forEach(word => {
+                if (word.length > 2 && !dictionary.has(word.toLowerCase())) {
+                    issues.push({
+                        match: word,
+                        index: text.indexOf(word),
+                        type: "error",
+                        message: `Possible spelling error: '${word}'`
+                    });
+                }
+            });
+            
+            // Display issues
+            if (issues.length > 0) {
+                issuesContainer.innerHTML = '';
+                issues.sort((a, b) => a.index - b.index);
+                
+                issues.forEach(issue => {
+                    const issueElement = document.createElement('div');
+                    issueElement.className = `issue-item issue-${issue.type}`;
+                    issueElement.innerHTML = `<strong>${issue.type.toUpperCase()}:</strong> ${issue.message}`;
+                    issuesContainer.appendChild(issueElement);
+                });
+            } else {
+                issuesContainer.innerHTML = '<p>No issues found. Your text looks good!</p>';
+            }
+            
+            // Update stats
+            updateStats(text);
+        }
+        
+        // Function to
